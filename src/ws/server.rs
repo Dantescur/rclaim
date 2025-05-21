@@ -112,6 +112,10 @@ async fn handle_client(
 
 pub async fn broadcast_events(state: &web::Data<WsState>, events: &[BattleEvent]) {
     tracing::debug!("Broadcasting {} events", events.len());
+    if state.event_sender.receiver_count() == 0 {
+        tracing::debug!("No subscribers for broadcast channel, skipping send event.");
+        return;
+    }
     for event in events {
         tracing::trace!("Sending event: {:?}", event);
         if let Err(e) = state.event_sender.send(event.clone()) {
