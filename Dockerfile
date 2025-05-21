@@ -1,9 +1,9 @@
-FROM rust:1.82 as builder
+FROM rust:1.86 as builder
 WORKDIR /usr/src/rclaim
 COPY . .
 RUN cargo build --release
 
-FROM rust:1.82-slim
+FROM rust:1.86-slim
 WORKDIR /app
 COPY --from=builder /usr/src/rclaim/target/release/rclaim /app/rclaim
 COPY .env /app/.env
