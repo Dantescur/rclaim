@@ -1,0 +1,71 @@
+version: "3.8"
+services:
+  rclaim:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rclaim
+    ports:
+      - "8082:8082"
+    volumes:
+      - ./logs:/app/logs
+    environment:
+      - RUST_LOG=info
+      - WS_AUTH_TOKEN=your_secret_token
+      - PORT=8082
+      - HOST=0.0.0.0
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - logging-net
+
+  loki:
+    image: grafana/loki:3.2.1
+    container_name: loki
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/loki-config.yaml
+    volumes:
+      - ./loki-config.yaml:/etc/loki/loki-config.yaml
+      - loki-data:/loki
+    networks:
+      - logging-net
+
+  promtail:
+    image: grafana/promtail:3.2.1
+    container_name: promtail
+    volumes:
+      - ./promtail-config.yaml:/etc/promtail/promtail-config.yaml
+      - ./logs:/logs:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    command: -config.file=/etc/promtail/promtail-config.yaml
+    depends_on:
+      - loki
+    networks:
+      - logging-net
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - loki
+    networks:
+      - logging-net
+
+volumes:
+  loki-data:
+  grafana-data:
+
+networks:
+  logging-net:
+    driver: bridge
