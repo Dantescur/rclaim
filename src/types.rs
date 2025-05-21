@@ -37,8 +37,8 @@ pub enum AppError {
     WebSocket(#[from] actix_ws::Closed), //
     #[error("Invalid client authentication")]
     Unauthorized,
-    #[error("Failed to schedule: {0}")]
-    ScheduleErro(#[from] tokio_cron_scheduler::JobSchedulerError),
+    // #[error("Failed to schedule")]
+    // ScheduleError,
     #[error("Rate limit exceeded")]
     RateLimitExceeded,
     #[error("Scraper error: {0}")]
