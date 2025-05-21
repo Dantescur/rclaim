@@ -29,7 +29,7 @@ async fn main() -> std::io::Result<()> {
     dotenvy::dotenv().ok();
 
     let host = env::var("HOST").unwrap_or_else(|_| {
-        tracing::warn!("HOST not set, dafauleting to 127.0.0.1");
+        tracing::warn!("HOST not set, defaulting to 127.0.0.1");
         "127.0.0.1".to_string()
     });
 
