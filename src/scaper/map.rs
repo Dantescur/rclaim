@@ -11,61 +11,86 @@ use std::sync::Arc;
 static RECORDED_ENTRIES: Lazy<Arc<DashMap<String, ()>>> = Lazy::new(|| Arc::new(DashMap::new()));
 pub static MAP_URL: &str = "https://api.chatwars.me/webview/map";
 
+static CELL_SELECTOR: Lazy<Selector> = Lazy::new(|| {
+    Selector::parse(".map-cell").expect("Failed to parse cell selector at compile time")
+});
+static BOTTOM_LEFT_SELECTOR: Lazy<Selector> = Lazy::new(|| {
+    Selector::parse(".bottom-left-text")
+        .expect("Failed to parse bottom-left selector at compile time")
+});
+static BOTTOM_RIGHT_SELECTOR: Lazy<Selector> = Lazy::new(|| {
+    Selector::parse(".bottom-right-text")
+        .expect("Failed to parse bottom-right selector at compile time")
+});
+static TOP_RIGHT_SELECTOR: Lazy<Selector> = Lazy::new(|| {
+    Selector::parse(".top-right-text").expect("Failed to parse top-right selector at compile time")
+});
+
+/// Checks for new battle events by scraping the provided URL.
+///
+/// # Arguments
+/// * `client` - The HTTP client to use for requests.
+/// * `url` - The URL to scrape for map data.
+///
+/// # Returns
+/// * `Ok(Vec<BattleEvent>)` containing new battle events.
+/// * `Err(AppError)` on HTTP, parsing, or selector errors.
 pub async fn check_for_new_entries(
     client: &reqwest::Client,
     url: &str,
 ) -> Result<Vec<BattleEvent>, AppError> {
     tracing::debug!("Sending GET request to {}", url);
-    let res = client.get(url).send().await?;
+    let res = client.get(url).send().await.map_err(|e| {
+        tracing::error!("HTTP request failed: {}", e);
+        AppError::Http(e)
+    })?;
     let status = res.status();
     tracing::info!("Received response from {} with status {}", url, status);
 
     if status.is_client_error() || status.is_server_error() {
         tracing::error!("HTTP error: status {}", status);
-        return Err(AppError::Scraper(format!("HTTP error: {}", status)));
+        return Err(AppError::HtmlParse(format!("HTTP error: {}", status)));
     }
 
-    let response = res.text().await?;
+    let response = res.text().await.map_err(|e| {
+        tracing::error!("Failed to read response body: {}", e);
+        AppError::Http(e)
+    })?;
     tracing::debug!("Parsed response body ({} bytes)", response.len());
 
     let document = Html::parse_document(&response);
     tracing::trace!("Parsed HTML document");
 
-    let cell_selector = Selector::parse(".map-cell")
-        .map_err(|e| AppError::Scraper(format!("Failed to parse cell selector: {}", e)))?;
-    let bottom_left_selector = Selector::parse(".bottom-left-text")
-        .map_err(|e| AppError::Scraper(format!("Failed to parse bottom-left selector: {}", e)))?;
-    let bottom_right_selector = Selector::parse(".bottom-right-text")
-        .map_err(|e| AppError::Scraper(format!("Failed to parse bottom-right selector: {}", e)))?;
-    let top_right_selector = Selector::parse(".top-right-text")
-        .map_err(|e| AppError::Scraper(format!("Failed to parse top-right selector: {}", e)))?;
-    tracing::trace!("Initialized CSS selectors");
-
     let mut new_events = Vec::new();
 
-    for element in document.select(&cell_selector) {
+    for element in document.select(&CELL_SELECTOR) {
         let bottom_left = element
-            .select(&bottom_left_selector)
+            .select(&BOTTOM_LEFT_SELECTOR)
             .next()
             .map(|e| e.text().collect::<String>())
             .unwrap_or_default();
 
         let bottom_right = element
-            .select(&bottom_right_selector)
+            .select(&BOTTOM_RIGHT_SELECTOR)
             .next()
             .map(|e| e.text().collect::<String>())
             .unwrap_or_default();
 
         let top_right = element
-            .select(&top_right_selector)
+            .select(&TOP_RIGHT_SELECTOR)
             .next()
             .map(|e| e.text().collect::<String>())
             .unwrap_or_default();
 
-        let location = Location::new(
-            crate::auth::sanitize(&bottom_right),
-            crate::auth::sanitize(&top_right),
+        let sanitized_bottom_right = crate::auth::sanitize(&bottom_right);
+        let sanitized_top_right = crate::auth::sanitize(&top_right);
+        tracing::trace!(
+            "Sanitized coordinates: bottom_right={}, top_right={}",
+            sanitized_bottom_right,
+            sanitized_top_right
         );
+
+        let location = Location::new(sanitized_bottom_right, sanitized_top_right);
 
         let location_str = location.as_string();
         tracing::trace!("Processing map cell at location: {}", location_str);
@@ -116,6 +141,7 @@ mod test {
                 </html>
                 "#,
             )
+            .expect(1)
             .create();
         (mock, format!("{}/webview/map", server.url()))
     }
@@ -154,6 +180,7 @@ mod test {
             .match_header("accept", Matcher::Any)
             .with_status(200)
             .with_body("")
+            .expect(1)
             .create();
         let client = Client::new();
         let url = format!("{}/webview/map", server.url());
@@ -166,6 +193,30 @@ mod test {
             RECORDED_ENTRIES.is_empty(),
             "Expected empty RECORDED_ENTRIES"
         );
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_check_for_new_entries_http_error() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/webview/map")
+            .match_header("accept", Matcher::Any)
+            .with_status(404)
+            .with_body("Not Found")
+            .expect(1)
+            .create();
+        let client = Client::new();
+        let url = format!("{}/webview/map", server.url());
+
+        RECORDED_ENTRIES.clear();
+
+        let result = check_for_new_entries(&client, &url).await;
+        assert!(matches!(
+            result,
+            Err(AppError::HtmlParse(ref msg)) if msg.contains("HTTP error: 404")
+        ));
 
         mock.assert_async().await;
     }

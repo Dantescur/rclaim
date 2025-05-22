@@ -7,6 +7,7 @@ use crate::ws::client::{Client, ClientMap, is_rate_limited};
 use actix_web::{HttpRequest, HttpResponse, web};
 use actix_ws::{Message, MessageStream, Session};
 use futures_util::stream::StreamExt;
+use scopeguard::defer;
 use tokio::sync::broadcast;
 
 pub struct WsState {
@@ -42,9 +43,12 @@ pub async fn ws_handler(
     );
 
     actix_web::rt::spawn(async move {
+        defer!({
+            tracing::info!("Cleaning up client {}", client_id);
+            state.clients.remove(&client_id);
+        });
         if let Err(e) = handle_client(session, stream, &state, &client_id).await {
             tracing::error!("Client error: {}", e);
-            state.clients.remove(&client_id);
         }
     });
 
@@ -60,7 +64,11 @@ async fn handle_client(
     tracing::debug!("Sending welcome message to client {}", client_id);
     session
         .text("Connected to the notification service!")
-        .await?;
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to send welcome message: {}", e);
+            AppError::WebSocket(e)
+        })?;
 
     let mut event_receiver = state.event_sender.subscribe();
     tracing::debug!("Client {} subscribed to event channel", client_id);

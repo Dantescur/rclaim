@@ -18,6 +18,13 @@ pub struct BattleEvent {
 
 impl Location {
     pub fn new(bottom_right: String, top_right: String) -> Self {
+        if bottom_right.is_empty() || top_right.is_empty() {
+            tracing::warn!(
+                "Invalid location coordinates: bottom_right={}, top_right={}",
+                bottom_right,
+                top_right
+            );
+        }
         Location {
             bottom_right,
             top_right,
@@ -37,10 +44,8 @@ pub enum AppError {
     WebSocket(#[from] actix_ws::Closed), //
     #[error("Invalid client authentication")]
     Unauthorized,
-    // #[error("Failed to schedule")]
-    // ScheduleError,
     #[error("Rate limit exceeded")]
     RateLimitExceeded,
-    #[error("Scraper error: {0}")]
-    Scraper(String),
+    #[error("HTML parsing failed: {0}")]
+    HtmlParse(String),
 }

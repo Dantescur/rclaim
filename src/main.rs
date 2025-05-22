@@ -35,15 +35,21 @@ async fn main() -> std::io::Result<()> {
 
     let port = env::var("PORT")
         .map(|p| {
-            p.parse::<u16>().unwrap_or_else(|e| {
+            p.parse::<u16>().map_err(|e| {
                 tracing::error!("Invalid PORT value: {}", e);
-                panic!("PORT must be a valid number");
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "PORT must be a valid number",
+                )
             })
         })
         .unwrap_or_else(|e| {
             tracing::error!("PORT not set: {}", e);
-            panic!("PORT must be set");
-        });
+            Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "PORT must be set",
+            ))
+        })?;
 
     tracing::info!("Binding server to {}:{}", host, port);
 
@@ -68,7 +74,9 @@ async fn main() -> std::io::Result<()> {
             .burst_size(100)
             .finish()
             .unwrap();
+
         tracing::debug!("Initialized rate limiter: 100 requests per second");
+
         App::new()
             .wrap(Governor::new(&governor_conf))
             .app_data(ws_state.clone())
