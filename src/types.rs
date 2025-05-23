@@ -39,7 +39,7 @@ pub enum AppError {
     #[error("HTTP request failed: {0}")]
     Http(#[from] reqwest::Error),
     #[error("WebSocket error: {0}")]
-    WebSocket(#[from] actix_ws::Closed), //
+    WebSocket(#[from] axum::Error),
     #[error("Invalid client authentication")]
     Unauthorized,
     #[error("Rate limit exceeded")]

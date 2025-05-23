@@ -3,19 +3,17 @@
 //
 
 use std::env;
+use std::sync::Arc;
 
 use crate::scaper::map::{MAP_URL, check_for_new_entries};
 use crate::types::AppError;
-use crate::ws::server::broadcast_events;
+use crate::ws::server::{WsState, broadcast_events};
 use reqwest::Client;
 
-pub async fn start_scheduler(
-    client: Client,
-    ws_state: actix_web::web::Data<crate::ws::server::WsState>,
-) -> Result<(), AppError> {
+pub async fn start_scheduler(client: Client, ws_state: Arc<WsState>) -> Result<(), AppError> {
     tracing::debug!("Starting scheduler task");
     let client = client.clone();
-    let ws_state = ws_state.clone();
+    let ws_state = Arc::clone(&ws_state);
 
     tokio::spawn(async move {
         loop {
@@ -23,7 +21,7 @@ pub async fn start_scheduler(
             match check_for_new_entries(&client, MAP_URL).await {
                 Ok(events) if !events.is_empty() => {
                     tracing::debug!("Broadcasting {} events", events.len());
-                    broadcast_events(&ws_state, &events).await;
+                    broadcast_events(ws_state.clone(), &events).await;
                 }
                 Ok(_) => {
                     tracing::debug!("No new events found")

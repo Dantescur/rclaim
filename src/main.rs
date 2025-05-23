@@ -8,20 +8,22 @@ mod scheduler;
 mod types;
 mod ws;
 
-use std::{env, sync::Arc};
+use std::{env, net::SocketAddr, sync::Arc};
 
-use actix_governor::{Governor, GovernorConfigBuilder};
-use actix_web::{App, HttpResponse, HttpServer, Responder, get, web};
+use axum::{Router, response::IntoResponse, routing::get};
+use reqwest::StatusCode;
 use tokio::sync::broadcast;
+use tower_governor::{
+    GovernorLayer, governor::GovernorConfigBuilder, key_extractor::GlobalKeyExtractor,
+};
 use ws::server::WsState;
 
-#[get("/")]
-async fn health_check() -> impl Responder {
-    tracing::info!("Health check requested");
-    HttpResponse::Ok()
+async fn health_check() -> impl IntoResponse {
+    tracing::info!("Health Check requested");
+    StatusCode::OK
 }
 
-#[actix_web::main]
+#[tokio::main]
 async fn main() -> std::io::Result<()> {
     logger::init_logger();
     tracing::info!("Starting rclaim server...");
@@ -51,13 +53,18 @@ async fn main() -> std::io::Result<()> {
             ))
         })?;
 
-    tracing::info!("Binding server to {}:{}", host, port);
+    let addr: SocketAddr = format!("{}:{}", host, port).parse().map_err(|e| {
+        tracing::error!("Failed to parse address: {}:{} {}", host, port, e);
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, e)
+    })?;
+
+    tracing::info!("Binding server to {}", addr);
 
     let (event_sender, _) = broadcast::channel(100);
     tracing::debug!("Initialized broadcast channel with capacity 100");
 
     let client = reqwest::Client::new();
-    let ws_state = web::Data::new(WsState {
+    let ws_state = Arc::new(WsState {
         clients: Arc::new(dashmap::DashMap::new()),
         event_sender,
     });
@@ -66,35 +73,31 @@ async fn main() -> std::io::Result<()> {
         .await
         .map_err(|e| {
             tracing::error!("Failed to start scheduler: {}", e);
-            std::io::Error::other(e)
+            std::io::Error::other(e.to_string())
         })?;
 
     tracing::info!("Scheduler started successfully");
 
-    HttpServer::new(move || {
-        let governor_conf = GovernorConfigBuilder::default()
-            .seconds_per_request(1)
-            .burst_size(100)
-            .finish()
-            .unwrap();
+    let governor_conf = GovernorConfigBuilder::default()
+        .per_second(1)
+        .burst_size(100)
+        .use_headers()
+        .key_extractor(GlobalKeyExtractor)
+        .finish()
+        .unwrap();
 
-        tracing::debug!("Initialized rate limiter: 100 requests per second");
+    tracing::debug!("Initialized rate limiter: 100 requests per second");
 
-        App::new()
-            .wrap(Governor::new(&governor_conf))
-            .app_data(ws_state.clone())
-            .service(health_check)
-            .service(web::resource("/ws").route(web::get().to(ws::server::ws_handler)))
-    })
-    .bind((host.as_str(), port))
-    .map_err(|e| {
-        tracing::error!("Failed to bind server to {}:{}: {}", host, port, e);
-        e
-    })?
-    .run()
-    .await
-    .map_err(|e| {
-        tracing::error!("Server failed: {}", e);
-        e
-    })
+    let app = Router::new()
+        .route("/", get(health_check))
+        .route("/ws", get(ws::server::ws_handler))
+        .layer(GovernorLayer {
+            config: Arc::new(governor_conf),
+        })
+        .with_state(ws_state);
+
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+
+    axum::serve(listener, app).await.unwrap();
+    Ok(())
 }
