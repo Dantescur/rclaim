@@ -35,11 +35,11 @@ pub async fn ws_handler(
     headers: HeaderMap,
     State(state): State<Arc<WsState>>,
 ) -> impl IntoResponse {
-    let protocol_header = headers
+    let maybe_token = headers
         .get("sec-websocket-protocol")
-        .and_then(|value| value.to_str().ok());
+        .and_then(|value| value.to_str().ok())
+        .and_then(|s| s.strip_prefix("token-"));
 
-    let maybe_token = protocol_header.and_then(|s| s.strip_prefix("token-"));
     tracing::debug!("WebSocket connection attempt with token: {:?}", maybe_token);
 
     if maybe_token.is_none() {
@@ -60,7 +60,7 @@ pub async fn ws_handler(
     state.clients.insert(
         client_id.clone(),
         Client {
-            request_count: 1,
+            request_count: 0,
             window_start: Some(Utc::now()),
         },
     );
@@ -91,6 +91,7 @@ async fn handle_client(
         ))
         .await
     {
+        tracing::error!("WebSocket receive error for client {}: {}", client_id, e);
         return Err(AppError::WebSocket(e));
     }
 
