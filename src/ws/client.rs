@@ -7,7 +7,8 @@ use dashmap::DashMap;
 use std::sync::Arc;
 
 pub struct Client {
-    pub rate_limit_timestamp: Vec<DateTime<Utc>>,
+    pub request_count: usize,
+    pub window_start: Option<DateTime<Utc>>,
 }
 
 pub type ClientMap = Arc<DashMap<String, Client>>;
@@ -17,17 +18,21 @@ pub fn is_rate_limited(client: &mut Client) -> bool {
     let window_ms = 15 * 60 * 1000;
     let max_request = 100;
 
-    client.rate_limit_timestamp = client
-        .rate_limit_timestamp
-        .drain(..)
-        .filter(|ts| now.signed_duration_since(*ts).num_milliseconds() < window_ms)
-        .collect();
-
-    if client.rate_limit_timestamp.len() >= max_request {
-        return true;
+    if let Some(start) = client.window_start {
+        if now.signed_duration_since(start).num_milliseconds() >= window_ms {
+            client.window_start = Some(now);
+            client.request_count = 0;
+            return false;
+        }
+        if client.request_count >= max_request {
+            return true;
+        }
+    } else {
+        client.window_start = Some(now);
+        client.request_count = 0;
+        return false;
     }
-
-    client.rate_limit_timestamp.push(now);
+    client.request_count += 1;
     false
 }
 
@@ -40,7 +45,8 @@ mod test {
     #[test]
     fn test_rate_limit() {
         let mut client = Client {
-            rate_limit_timestamp: Vec::new(),
+            request_count: 0,
+            window_start: Some(Utc::now()),
         };
 
         for _ in 0..99 {
@@ -51,7 +57,7 @@ mod test {
 
         assert!(is_rate_limited(&mut client));
 
-        client.rate_limit_timestamp = vec![Utc::now() - Duration::minutes(16)];
+        client.window_start = Some(Utc::now() - Duration::minutes(16));
         assert!(!is_rate_limited(&mut client));
     }
 }

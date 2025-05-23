@@ -11,9 +11,6 @@ static AUTH_TOKEN: OnceLock<String> = OnceLock::new();
 /// Defaults to "test_token" if not set.
 fn init_auth_token() -> &'static String {
     AUTH_TOKEN.get_or_init(|| {
-        dotenvy::dotenv()
-            .map_err(|e| tracing::warn!("Failed to load .env: {}", e))
-            .ok();
         env::var("WS_AUTH_TOKEN").unwrap_or_else(|e| {
             tracing::warn!("WS_AUTH_TOKEN not set, defaulting to test_token: {}", e);
             "test_token".to_string()
@@ -29,7 +26,6 @@ fn init_auth_token() -> &'static String {
 /// # Returns
 /// * `Ok(())` if the token is valid.
 /// * `Err(AppError::Unauthorized)` if the token is invalid or missing.
-#[must_use]
 pub fn is_valid_client(token: Option<&str>) -> Result<(), AppError> {
     tracing::debug!("Validating token: {:?}", token);
     match token {
@@ -38,7 +34,7 @@ pub fn is_valid_client(token: Option<&str>) -> Result<(), AppError> {
             Ok(())
         }
         _ => {
-            tracing::warn!("Invalid token: {:?}", token);
+            tracing::warn!("Invalid token provided");
             Err(AppError::Unauthorized)
         }
     }
@@ -66,18 +62,15 @@ pub fn sanitize(input: &str) -> String {
 #[cfg(test)]
 mod test {
     use super::*;
+    use temp_env::with_var;
 
     #[test]
     fn test_is_valid_client() {
-        unsafe {
-            env::set_var("WS_AUTH_TOKEN", "test_token");
-        }
-        assert!(is_valid_client(Some("test_token")).is_ok());
-        assert!(is_valid_client(Some("wrong_token")).is_err());
-        assert!(is_valid_client(None).is_err());
-        unsafe {
-            env::remove_var("WS_AUTH_TOKEN");
-        }
+        with_var("WS_AUTH_TOKEN", Some("test_token"), || {
+            assert!(is_valid_client(Some("test_token")).is_ok());
+            assert!(is_valid_client(Some("wrong_token")).is_err());
+            assert!(is_valid_client(None).is_err());
+        });
     }
 
     #[test]

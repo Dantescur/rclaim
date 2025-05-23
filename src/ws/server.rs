@@ -6,6 +6,7 @@ use crate::types::{AppError, BattleEvent};
 use crate::ws::client::{Client, ClientMap, is_rate_limited};
 use actix_web::{HttpRequest, HttpResponse, web};
 use actix_ws::{Message, MessageStream, Session};
+use chrono::Utc;
 use futures_util::stream::StreamExt;
 use scopeguard::defer;
 use tokio::sync::broadcast;
@@ -38,7 +39,8 @@ pub async fn ws_handler(
     state.clients.insert(
         client_id.clone(),
         Client {
-            rate_limit_timestamp: Vec::new(),
+            request_count: 1,
+            window_start: Some(Utc::now()),
         },
     );
 
@@ -114,7 +116,7 @@ async fn handle_client(
     }
 
     tracing::info!("Client {} cleanup completed", client_id);
-    state.clients.remove(client_id);
+    // state.clients.remove(client_id);
     Ok(())
 }
 

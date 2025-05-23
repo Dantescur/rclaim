@@ -17,18 +17,16 @@ pub struct BattleEvent {
 }
 
 impl Location {
-    pub fn new(bottom_right: String, top_right: String) -> Self {
+    pub fn new(bottom_right: String, top_right: String) -> Result<Self, AppError> {
         if bottom_right.is_empty() || top_right.is_empty() {
-            tracing::warn!(
-                "Invalid location coordinates: bottom_right={}, top_right={}",
-                bottom_right,
-                top_right
-            );
+            return Err(AppError::HtmlParse(
+                "Invalid location coordinates".to_string(),
+            ));
         }
-        Location {
+        Ok(Location {
             bottom_right,
             top_right,
-        }
+        })
     }
 
     pub fn as_string(&self) -> String {

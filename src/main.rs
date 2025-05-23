@@ -62,10 +62,13 @@ async fn main() -> std::io::Result<()> {
         event_sender,
     });
 
-    if let Err(e) = scheduler::start_scheduler(client, ws_state.clone()).await {
-        tracing::error!("Failed to start scheduler: {}", e);
-        panic!("Scheduler initialization failed");
-    }
+    scheduler::start_scheduler(client, ws_state.clone())
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to start scheduler: {}", e);
+            std::io::Error::other(e)
+        })?;
+
     tracing::info!("Scheduler started successfully");
 
     HttpServer::new(move || {

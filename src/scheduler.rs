@@ -2,6 +2,8 @@
 //  src/scheduler.rs
 //
 
+use std::env;
+
 use crate::scaper::map::{MAP_URL, check_for_new_entries};
 use crate::types::AppError;
 use crate::ws::server::broadcast_events;
@@ -28,8 +30,11 @@ pub async fn start_scheduler(
                 }
                 Err(e) => tracing::error!("Error checking entries: {}", e),
             }
-            tracing::trace!("Sleeping for 60 seconds");
-            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            let interval = env::var("SCHEDULE_INTERVAL")
+                .map(|s| s.parse::<u64>().unwrap_or(60))
+                .unwrap_or(60);
+            tracing::trace!("Sleeping for {} seconds", interval);
+            tokio::time::sleep(std::time::Duration::from_secs(interval)).await;
         }
     });
 

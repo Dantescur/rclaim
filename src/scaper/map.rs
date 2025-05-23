@@ -90,7 +90,7 @@ pub async fn check_for_new_entries(
             sanitized_top_right
         );
 
-        let location = Location::new(sanitized_bottom_right, sanitized_top_right);
+        let location = Location::new(sanitized_bottom_right, sanitized_top_right)?;
 
         let location_str = location.as_string();
         tracing::trace!("Processing map cell at location: {}", location_str);
