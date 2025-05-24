@@ -1,27 +1,28 @@
-/*
-  logger.rs
-*/
-
 use std::env;
+use tracing_subscriber::{EnvFilter, Layer, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
-use tracing::Level;
-use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
+const IS_PRETTY: bool = cfg!(debug_assertions);
 
 pub fn init_logger() {
-    let console_layer = fmt::layer()
-        .pretty()
-        .with_target(true)
-        .with_line_number(true)
-        .with_file(true);
-
-    let env_filter = EnvFilter::builder()
-        .with_default_directive(
-            env::var("RUST_LOG")
-                .unwrap_or("info".to_string())
-                .parse()
-                .unwrap_or(Level::INFO.into()),
+    let console_layer: Box<dyn Layer<_> + Send + Sync> = if IS_PRETTY {
+        Box::new(
+            fmt::layer()
+                .pretty()
+                .with_target(true)
+                .with_line_number(true)
+                .with_file(true),
         )
-        .from_env_lossy();
+    } else {
+        Box::new(fmt::layer().compact().with_target(false).with_level(false))
+    };
+
+    let env_filter = match env::var("RUST_LOG") {
+        Ok(val) => EnvFilter::try_new(&val).unwrap_or_else(|err| {
+            eprintln!("⚠️ Invalid RUST_LOG '{}': {}", val, err);
+            EnvFilter::new("info")
+        }),
+        Err(_) => EnvFilter::new("info"),
+    };
 
     tracing_subscriber::registry()
         .with(console_layer)

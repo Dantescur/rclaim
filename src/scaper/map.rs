@@ -5,28 +5,26 @@
 use crate::types::{AppError, BattleEvent, Location};
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
+use scraper::{Html, Selector};
 use std::sync::Arc;
-use tl::ParserOptions;
 
 static RECORDED_ENTRIES: Lazy<Arc<DashMap<String, ()>>> = Lazy::new(|| Arc::new(DashMap::new()));
 pub static MAP_URL: &str = "https://api.chatwars.me/webview/map";
 
-/// Finds a child <span> with the specified class and returns its inner text.
-fn find_span_text<'a>(node: &'a tl::Node<'a>, parser: &'a tl::Parser<'a>, class: &str) -> String {
-    node.children()
-        .top()
-        .iter()
-        .filter_map(|handle| handle.get(parser))
-        .filter_map(|child| child.as_tag())
-        .find(|tag| {
-            tag.attributes()
-                .get("class")
-                .map(|c| c.as_utf8_str() == class)
-                .unwrap_or(false)
-        })
-        .and_then(|tag| tag.inner_text(parser).map(|s| s.to_string()))
-        .unwrap_or_default()
-}
+static CELL_SELECTOR: Lazy<Selector> = Lazy::new(|| {
+    Selector::parse(".map-cell").expect("Failed to parse cell selector at compile time")
+});
+static BOTTOM_LEFT_SELECTOR: Lazy<Selector> = Lazy::new(|| {
+    Selector::parse(".bottom-left-text")
+        .expect("Failed to parse bottom-left selector at compile time")
+});
+static BOTTOM_RIGHT_SELECTOR: Lazy<Selector> = Lazy::new(|| {
+    Selector::parse(".bottom-right-text")
+        .expect("Failed to parse bottom-right selector at compile time")
+});
+static TOP_RIGHT_SELECTOR: Lazy<Selector> = Lazy::new(|| {
+    Selector::parse(".top-right-text").expect("Failed to parse top-right selector at compile time")
+});
 
 /// Checks for new battle events by scraping the provided URL.
 ///
@@ -60,38 +58,28 @@ pub async fn check_for_new_entries(
     })?;
     tracing::debug!("Parsed response body ({} bytes)", response.len());
 
-    let dom = tl::parse(&response, ParserOptions::default()).map_err(|e| {
-        tracing::error!("Failed to parse HTML: {}", e);
-        AppError::HtmlParse(e.to_string())
-    })?;
+    let document = Html::parse_document(&response);
     tracing::trace!("Parsed HTML document");
 
-    let parser = dom.parser();
     let mut new_events = Vec::new();
 
-    for node_handle in dom.query_selector(".map-cell").unwrap() {
-        let node = node_handle.get(parser).ok_or_else(|| {
-            tracing::error!("Failed to get node for handle");
-            AppError::HtmlParse("Invalid node handle".to_string())
-        })?;
+    for element in document.select(&CELL_SELECTOR) {
+        let bottom_left = element
+            .select(&BOTTOM_LEFT_SELECTOR)
+            .next()
+            .map(|e| e.text().collect::<String>())
+            .unwrap_or_default();
 
-        let bottom_left = node
-            .query_selector(parser, ".bottom-left-text")
-            .and_then(|mut iter| iter.next())
-            .and_then(|n| n.get(parser))
-            .and_then(|n| n.inner_text(parser).map(|s| s.to_string()))
+        let bottom_right = element
+            .select(&BOTTOM_RIGHT_SELECTOR)
+            .next()
+            .map(|e| e.text().collect::<String>())
             .unwrap_or_default();
-        let bottom_right = node
-            .query_selector(parser, ".bottom-right-text")
-            .and_then(|mut iter| iter.next())
-            .and_then(|n| n.get(parser))
-            .and_then(|n| n.inner_text(parser).map(|s| s.to_string()))
-            .unwrap_or_default();
-        let top_right = node
-            .query_selector(parser, ".top-right-text")
-            .and_then(|mut iter| iter.next())
-            .and_then(|n| n.get(parser))
-            .and_then(|n| n.inner_text(parser).map(|s| s.to_string()))
+
+        let top_right = element
+            .select(&TOP_RIGHT_SELECTOR)
+            .next()
+            .map(|e| e.text().collect::<String>())
             .unwrap_or_default();
 
         let sanitized_bottom_right = crate::auth::sanitize(&bottom_right);
@@ -233,3 +221,4 @@ mod test {
         mock.assert_async().await;
     }
 }
+
