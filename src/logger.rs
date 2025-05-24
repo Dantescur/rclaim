@@ -13,7 +13,14 @@ pub fn init_logger() {
                 .with_file(true),
         )
     } else {
-        Box::new(fmt::layer().compact().with_target(false).with_level(false))
+        Box::new(
+            fmt::layer()
+                .json()
+                .with_current_span(true)
+                .with_span_list(true)
+                .with_target(true)
+                .with_level(true),
+        )
     };
 
     let env_filter = match env::var("RUST_LOG") {
