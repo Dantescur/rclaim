@@ -25,10 +25,9 @@ async fn health_check() -> impl IntoResponse {
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
+    dotenvy::dotenv().ok();
     logger::init_logger();
     tracing::info!("Starting rclaim server...");
-
-    dotenvy::dotenv().ok();
 
     let host = env::var("HOST").unwrap_or_else(|_| {
         tracing::warn!("HOST not set, defaulting to 127.0.0.1");
