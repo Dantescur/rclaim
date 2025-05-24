@@ -7,11 +7,9 @@ services:
     container_name: rclaim
     ports:
       - "8082:8082"
-    volumes:
-      - ./logs:/app/logs
     environment:
       - RUST_LOG=info
-      - WS_AUTH_TOKEN=your_secret_token
+      - WS_AUTH_TOKEN=THE_SECRET_TOKEN
       - PORT=8082
       - HOST=0.0.0.0
     logging:

@@ -18,6 +18,7 @@ pub fn init_logger() {
                 .json()
                 .with_current_span(true)
                 .with_span_list(true)
+                .flatten_event(true)
                 .with_target(true)
                 .with_level(true),
         )
